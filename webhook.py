@@ -4,12 +4,9 @@ import os
 
 app = Flask(__name__)
 
-# Stripe webhook secret
-STRIPE_WEBHOOK_SECRET = 'whsec_86370940d1a09fe720e7d9768c776b104517b7c95e08d4c6f38520aae95d5c36'
-
-# Placeholder logic
-def send_macci_to_wallet(wallet_address, amount):
-    print(f"[✔] Sent {amount} MACCI to {wallet_address}")
+# ✅ Replace with your real secret key
+stripe.api_key = 'sk_test_placeholder'
+STRIPE_WEBHOOK_SECRET = 'whsec_QEXUaQvlxeH5NUgILY3AULiXc23kkDsj'  # example
 
 @app.route('/stripe-webhook', methods=['POST'])
 def stripe_webhook():
@@ -21,9 +18,13 @@ def stripe_webhook():
             payload, sig_header, STRIPE_WEBHOOK_SECRET
         )
     except ValueError:
+        print("❌ Invalid payload")
         return 'Invalid payload', 400
     except stripe.error.SignatureVerificationError:
+        print("❌ Invalid signature")
         return 'Invalid signature', 400
+
+    print("✅ Webhook received:", event['type'])
 
     if event['type'] == 'checkout.session.completed':
         session = event['data']['object']
@@ -38,19 +39,15 @@ def stripe_webhook():
                     wallet_address = field["text"]["value"]
                     break
         except Exception as e:
-            print(f"⚠️ Error reading custom field: {e}")
+            print("⚠️ Couldn't read wallet address:", e)
 
         if wallet_address:
-            send_macci_to_wallet(wallet_address, amount_macci)
-            print(f"✅ Payment received: ${amount_paid} → {amount_macci} MACCI sent to {wallet_address}")
+            print(f"✅ Sent {amount_macci} MACCI to {wallet_address}")
         else:
-            print("⚠️ No wallet address found in custom fields.")
+            print("⚠️ Wallet address missing.")
 
-    return jsonify(success=True)
-
-# === Run on Render ===
+    return jsonify(success=True), 200  # ✅ Stripe expects 200 OK
 
 if __name__ == '__main__':
-    stripe.api_key = 'sk_test_placeholder'
     port = int(os.environ.get("PORT", 4242))
     app.run(host="0.0.0.0", port=port)
