@@ -5,13 +5,10 @@ import json
 
 app = Flask(__name__)
 
-# Set your real Stripe secret key
-stripe.api_key = "sk_test_placeholder"  # Required for stripe lib
-
-# Webhook secret
+# Stripe webhook secret
 STRIPE_WEBHOOK_SECRET = "whsec_86370940d1a09fe720e7d9768c776b104517b7c95e08d4c6f38520aae95d5c36"
 
-# Simulate MACCI wallet function
+# Simulate sending MACCI
 def send_macci_to_wallet(wallet_address, amount):
     print(f"✅ [MACCI SENT] {amount} MACCI → {wallet_address}")
 
@@ -38,7 +35,7 @@ def stripe_webhook():
 
         wallet_address = None
 
-        # Try custom_fields first
+        # Try custom fields
         try:
             custom_fields = session.get("custom_fields", [])
             for field in custom_fields:
@@ -46,27 +43,26 @@ def stripe_webhook():
                     wallet_address = field.get("text", {}).get("value")
                     break
         except Exception as e:
-            print(f"⚠️ Failed to parse custom_fields: {e}")
+            print(f"⚠️ Could not parse custom_fields: {e}")
 
         # Try metadata fallback
         if not wallet_address:
-            try:
-                wallet_address = session.get("metadata", {}).get("wallet_address")
-            except Exception as e:
-                print(f"⚠️ Failed to parse metadata: {e}")
+            wallet_address = session.get("metadata", {}).get("wallet_address")
 
-        # Log everything for debugging
-        print("📝 Full session object:")
+        # Print full session for debugging
+        print("📦 Full session object:")
         print(json.dumps(session, indent=2))
 
         if wallet_address:
             send_macci_to_wallet(wallet_address, amount_macci)
-            print(f"✅ Payment received: ${amount_paid} → {amount_macci} MACCI sent to {wallet_address}")
+            print(f"✅ Payment: ${amount_paid} → {amount_macci} MACCI → {wallet_address}")
         else:
-            print("❌ Wallet address missing — cannot send MACCI.")
+            print("❌ Wallet address missing in session")
 
     return jsonify(success=True), 200
 
+# ✅ FIXED: Use correct port from Render
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 4242))
+    stripe.api_key = "sk_test_placeholder"  # Required by stripe lib
+    port = int(os.environ.get("PORT", 10000))  # ✅ Matches Render port
     app.run(host="0.0.0.0", port=port)
