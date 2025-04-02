@@ -39,7 +39,7 @@ def stripe_webhook():
         try:
             custom_fields = session.get("custom_fields", [])
             for field in custom_fields:
-                if "Macci Wallet Address" in field.get("label", {}).get("custom", ""):
+                if "macci wallet address" in field.get("label", {}).get("custom", "").lower():
                     wallet_address = field.get("text", {}).get("value")
                     break
         except Exception as e:
