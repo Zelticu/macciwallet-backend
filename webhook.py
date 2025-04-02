@@ -5,10 +5,10 @@ import json
 
 app = Flask(__name__)
 
-# Stripe webhook secret
-STRIPE_WEBHOOK_SECRET = "whsec_8DcpqnYf4RYfjFcaHDk8I3HUF9L0GxPi"
+# ✅ Set your real secret here
+STRIPE_WEBHOOK_SECRET = "whsec_86370940d1a09fe720e7d9768c776b104517b7c95e08d4c6f38520aae95d5c36"
 
-# Simulate sending MACCI
+# ✅ Simulate sending MACCI (you can later connect to blockchain.py)
 def send_macci_to_wallet(wallet_address, amount):
     print(f"✅ [MACCI SENT] {amount} MACCI → {wallet_address}")
 
@@ -31,21 +31,20 @@ def stripe_webhook():
     if event['type'] == 'checkout.session.completed':
         session = event['data']['object']
         amount_paid = int(session.get('amount_total', 0)) / 100
-        amount_macci = int(amount_paid / 0.01)
+        amount_macci = int(amount_paid / 0.01)  # 100 MACCI per $1.00
 
+        # Try to extract wallet address from any custom field
         wallet_address = None
-
-        # Try custom fields (CASE INSENSITIVE)
         try:
             for field in session.get("custom_fields", []):
                 label = field.get("label", {}).get("custom", "").lower()
-                if "macci" in label and "wallet" in label:
+                if "wallet" in label:
                     wallet_address = field.get("text", {}).get("value")
                     break
         except Exception as e:
             print(f"⚠️ Could not parse custom_fields: {e}")
 
-        # Try metadata fallback
+        # Fallback: check metadata
         if not wallet_address:
             wallet_address = session.get("metadata", {}).get("wallet_address")
 
@@ -60,8 +59,8 @@ def stripe_webhook():
 
     return jsonify(success=True), 200
 
-# Start app
+# ✅ Proper Render port binding
 if __name__ == '__main__':
-    stripe.api_key = "sk_test_placeholder"  # required
+    stripe.api_key = "sk_test_placeholder"  # required by stripe lib even if unused
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
