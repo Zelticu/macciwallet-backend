@@ -1,14 +1,19 @@
 import stripe
 from flask import Flask, request, jsonify
 import os
+import json
 
 app = Flask(__name__)
 
-# ✅ Replace this with your Stripe test secret key
-stripe.api_key = 'sk_test_placeholder'
+# Set your real Stripe secret key
+stripe.api_key = "sk_test_placeholder"  # Required for stripe lib
 
-# ✅ Your actual webhook secret (from Render or CLI)
-STRIPE_WEBHOOK_SECRET = 'whsec_86370940d1a09fe720e7d9768c776b104517b7c95e08d4c6f38520aae95d5c36'
+# Webhook secret
+STRIPE_WEBHOOK_SECRET = "whsec_86370940d1a09fe720e7d9768c776b104517b7c95e08d4c6f38520aae95d5c36"
+
+# Simulate MACCI wallet function
+def send_macci_to_wallet(wallet_address, amount):
+    print(f"✅ [MACCI SENT] {amount} MACCI → {wallet_address}")
 
 @app.route('/stripe-webhook', methods=['POST'])
 def stripe_webhook():
@@ -16,9 +21,7 @@ def stripe_webhook():
     sig_header = request.headers.get('Stripe-Signature')
 
     try:
-        event = stripe.Webhook.construct_event(
-            payload, sig_header, STRIPE_WEBHOOK_SECRET
-        )
+        event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
     except ValueError:
         print("❌ Invalid payload")
         return 'Invalid payload', 400
@@ -35,21 +38,32 @@ def stripe_webhook():
 
         wallet_address = None
 
-        # ✅ Try to extract custom wallet address
-        custom_fields = session.get("custom_fields", [])
-        for field in custom_fields:
-            try:
-                if field["label"]["custom"] == "Macci Wallet Address":
-                    wallet_address = field["text"]["value"]
+        # Try custom_fields first
+        try:
+            custom_fields = session.get("custom_fields", [])
+            for field in custom_fields:
+                if "Macci Wallet Address" in field.get("label", {}).get("custom", ""):
+                    wallet_address = field.get("text", {}).get("value")
                     break
+        except Exception as e:
+            print(f"⚠️ Failed to parse custom_fields: {e}")
+
+        # Try metadata fallback
+        if not wallet_address:
+            try:
+                wallet_address = session.get("metadata", {}).get("wallet_address")
             except Exception as e:
-                print(f"⚠️ Failed to read custom field: {e}")
+                print(f"⚠️ Failed to parse metadata: {e}")
+
+        # Log everything for debugging
+        print("📝 Full session object:")
+        print(json.dumps(session, indent=2))
 
         if wallet_address:
+            send_macci_to_wallet(wallet_address, amount_macci)
             print(f"✅ Payment received: ${amount_paid} → {amount_macci} MACCI sent to {wallet_address}")
-            # TODO: Integrate with MACCI balance logic (optional)
         else:
-            print("⚠️ No wallet address found in custom fields.")
+            print("❌ Wallet address missing — cannot send MACCI.")
 
     return jsonify(success=True), 200
 
