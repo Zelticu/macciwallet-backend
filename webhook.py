@@ -6,7 +6,7 @@ import json
 app = Flask(__name__)
 
 # Stripe webhook secret
-STRIPE_WEBHOOK_SECRET = "whsec_86370940d1a09fe720e7d9768c776b104517b7c95e08d4c6f38520aae95d5c36"
+STRIPE_WEBHOOK_SECRET = "whsec_8DcpqnYf4RYfjFcaHDk8I3HUF9L0GxPi"
 
 # Simulate sending MACCI
 def send_macci_to_wallet(wallet_address, amount):
