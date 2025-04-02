@@ -35,11 +35,11 @@ def stripe_webhook():
 
         wallet_address = None
 
-        # Try custom fields
+        # Try custom fields (CASE INSENSITIVE)
         try:
-            custom_fields = session.get("custom_fields", [])
-            for field in custom_fields:
-                if "macci wallet address" in field.get("label", {}).get("custom", "").lower():
+            for field in session.get("custom_fields", []):
+                label = field.get("label", {}).get("custom", "").lower()
+                if "macci" in label and "wallet" in label:
                     wallet_address = field.get("text", {}).get("value")
                     break
         except Exception as e:
@@ -49,7 +49,6 @@ def stripe_webhook():
         if not wallet_address:
             wallet_address = session.get("metadata", {}).get("wallet_address")
 
-        # Print full session for debugging
         print("📦 Full session object:")
         print(json.dumps(session, indent=2))
 
@@ -61,8 +60,8 @@ def stripe_webhook():
 
     return jsonify(success=True), 200
 
-# ✅ FIXED: Use correct port from Render
+# Start app
 if __name__ == '__main__':
-    stripe.api_key = "sk_test_placeholder"  # Required by stripe lib
-    port = int(os.environ.get("PORT", 10000))  # ✅ Matches Render port
+    stripe.api_key = "sk_test_placeholder"  # required
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
