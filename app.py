@@ -1,47 +1,30 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import hashlib, json, time, uuid, os
+import hashlib
+import json
+import time
+import uuid
 
 app = Flask(__name__)
 CORS(app)
 
+# === MACCI CONFIG ===
 MAX_SUPPLY = 100_000_000
 PREMINE_AMOUNT = 40_000_000
-PRESALE_RATE = 10000
+PRESALE_RATE = 10000  # 1 USDT = 10,000 MACCI
 MINING_REWARD = 10
 DIFFICULTY = 9
 
-wallets = {}
+wallets = {}  # wallet_address: {balance, private_key}
 chain = []
 transactions = []
 total_mined = 0
-WALLET_FILE = "macci_wallets.json"
 
 MAIN_WALLET = "7fc8cb7519f34a0dbef5b2e15ecc24be"
-MAIN_KEY = "895175c759ae4f7db233da59c9cec12c"
+wallets[MAIN_WALLET] = {"balance": PREMINE_AMOUNT, "private_key": "PREMINED_KEY"}
+total_mined += PREMINE_AMOUNT
 
-def save_wallets():
-    data = {
-        "wallets": wallets,
-        "total_mined": total_mined
-    }
-    with open(WALLET_FILE, "w") as f:
-        json.dump(data, f)
-
-def load_wallets():
-    global wallets, total_mined
-    if os.path.exists(WALLET_FILE):
-        with open(WALLET_FILE, "r") as f:
-            data = json.load(f)
-            wallets = data.get("wallets", {})
-            total_mined = data.get("total_mined", 0)
-    else:
-        total_mined = PREMINE_AMOUNT
-        wallets[MAIN_WALLET] = {
-            "balance": PREMINE_AMOUNT,
-            "private_key": MAIN_KEY
-        }
-        save_wallets()
+# === Blockchain Core ===
 
 def create_genesis_block():
     genesis = {
@@ -64,14 +47,13 @@ def proof_of_work(previous_proof):
             return proof
         proof += 1
 
-def mine_block(address, key):
+def mine_block(address):
     global total_mined
     if address not in wallets:
         return "❌ Wallet not found."
-    if wallets[address]["private_key"] != key:
-        return "❌ Invalid private key."
+
     if total_mined + MINING_REWARD > MAX_SUPPLY:
-        return "❌ Max supply reached."
+        return "❌ Max supply reached. Cannot mine more MACCI."
 
     previous_proof = chain[-1]['proof']
     proof = proof_of_work(previous_proof)
@@ -87,7 +69,6 @@ def mine_block(address, key):
     wallets[address]['balance'] += MINING_REWARD
     total_mined += MINING_REWARD
     transactions.clear()
-    save_wallets()
 
     return f"⛏️ Block mined! +{MINING_REWARD} MACCI to {address}"
 
@@ -95,7 +76,6 @@ def create_wallet():
     addr = uuid.uuid4().hex[:32]
     key = uuid.uuid4().hex
     wallets[addr] = {"balance": 0, "private_key": key}
-    save_wallets()
     return addr, key
 
 def recover_wallet(key):
@@ -111,7 +91,7 @@ def get_balance(address, key):
         return "❌ Invalid private key."
     return f"💰 Balance: {wallets[address]['balance']} MACCI"
 
-def send_macci(sender, key, to, amount, recipient_wallet):
+def send_macci(sender, recipient, amount, key):
     if sender not in wallets:
         return "❌ Sender not found."
     if wallets[sender]['private_key'] != key:
@@ -119,20 +99,17 @@ def send_macci(sender, key, to, amount, recipient_wallet):
     if wallets[sender]['balance'] < amount:
         return "❌ Not enough balance."
 
-    if recipient_wallet not in wallets:
-        wallets[recipient_wallet] = {"balance": 0, "private_key": "UNKNOWN"}
+    if recipient not in wallets:
+        wallets[recipient] = {"balance": 0, "private_key": "UNKNOWN"}
 
     wallets[sender]['balance'] -= amount
-    wallets[recipient_wallet]['balance'] += amount
-    save_wallets()
-    return f"✅ Sent {amount} MACCI from {sender} to {recipient_wallet}"
+    wallets[recipient]['balance'] += amount
+    return f"✅ Sent {amount} MACCI from {sender} to {recipient}"
 
-def trade_usdt(wallet, key, usdt_amount):
+def trade_usdt(wallet, usdt_amount):
     global total_mined
     if wallet not in wallets:
         return "❌ Wallet not found."
-    if wallets[wallet]['private_key'] != key:
-        return "❌ Invalid private key."
 
     try:
         usdt = float(usdt_amount)
@@ -145,12 +122,13 @@ def trade_usdt(wallet, key, usdt_amount):
     macci = int(usdt * PRESALE_RATE)
 
     if total_mined + macci > MAX_SUPPLY:
-        return "❌ Max supply reached."
+        return "❌ Max supply reached. Cannot mint more MACCI."
 
     wallets[wallet]['balance'] += macci
     total_mined += macci
-    save_wallets()
     return f"💱 Traded {usdt} USDT → {macci} MACCI"
+
+# === Terminal Command Route ===
 
 @app.route('/terminal', methods=['POST'])
 def terminal():
@@ -168,34 +146,30 @@ def terminal():
                 return jsonify({"output": "Usage: recover <private_key>"})
             addr = recover_wallet(cmd[1])
             return jsonify({"output": f"🔑 Wallet Address: {addr}" if addr else "❌ No wallet matches that key."})
+        case 'mine':
+            if len(cmd) != 2:
+                return jsonify({"output": "Usage: mine <wallet_address>"})
+            return jsonify({"output": mine_block(cmd[1])})
         case 'balance':
             if len(cmd) != 3:
                 return jsonify({"output": "Usage: balance <wallet_address> <private_key>"})
             return jsonify({"output": get_balance(cmd[1], cmd[2])})
-        case 'mine':
-            if len(cmd) != 3:
-                return jsonify({"output": "Usage: mine <wallet_address> <private_key>"})
-            response = {"output": "mining... ⛏️ warning: running another command will cancel the mine!"}
-            result = mine_block(cmd[1], cmd[2])
-            response["output"] += f"\n{result}"
-            return jsonify(response)
         case 'send':
-            if len(cmd) != 6:
-                return jsonify({"output": "Usage: send <wallet_address> <private_key> <to> <amount> <recipient_wallet>"})
+            if len(cmd) != 5:
+                return jsonify({"output": "Usage: send <from> <to> <amount> <private_key>"})
             try:
-                amount = float(cmd[4])
+                amount = float(cmd[3])
             except:
                 return jsonify({"output": "❌ Invalid amount."})
-            return jsonify({"output": send_macci(cmd[1], cmd[2], cmd[3], amount, cmd[5])})
+            return jsonify({"output": send_macci(cmd[1], cmd[2], amount, cmd[4])})
         case 'trade':
-            if len(cmd) != 4:
-                return jsonify({"output": "Usage: trade <wallet_address> <private_key> <usdt_amount>"})
-            return jsonify({"output": trade_usdt(cmd[1], cmd[2], cmd[3])})
+            if len(cmd) != 3:
+                return jsonify({"output": "Usage: trade <wallet_address> <usdt_amount>"})
+            return jsonify({"output": trade_usdt(cmd[1], cmd[2])})
         case _:
             return jsonify({"output": "❓ Unknown command. Try: create, recover, mine, balance, send, trade"})
 
 if __name__ == '__main__':
-    load_wallets()
     create_genesis_block()
-    print(f"✅ MACCI Terminal running with difficulty {DIFFICULTY}")
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    print(f"✅ MACCI server running with difficulty {DIFFICULTY}")
+    app.run(port=1000)
