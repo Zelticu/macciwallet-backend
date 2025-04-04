@@ -1,21 +1,18 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import hashlib
-import json
-import time
-import uuid
+import hashlib, json, time, uuid
 
 app = Flask(__name__)
 CORS(app)
 
-# === MACCI CONFIG ===
+# === CONFIG ===
 MAX_SUPPLY = 100_000_000
 PREMINE_AMOUNT = 40_000_000
-PRESALE_RATE = 10000  # 1 USDT = 10,000 MACCI
+PRESALE_RATE = 10000
 MINING_REWARD = 10
 DIFFICULTY = 9
 
-wallets = {}  # wallet_address: {balance, private_key}
+wallets = {}
 chain = []
 transactions = []
 total_mined = 0
@@ -24,25 +21,23 @@ MAIN_WALLET = "7fc8cb7519f34a0dbef5b2e15ecc24be"
 wallets[MAIN_WALLET] = {"balance": PREMINE_AMOUNT, "private_key": "PREMINED_KEY"}
 total_mined += PREMINE_AMOUNT
 
-# === Blockchain Core ===
-
+# === BLOCKCHAIN CORE ===
 def create_genesis_block():
-    genesis = {
+    chain.append({
         'index': 1,
         'timestamp': time.time(),
         'proof': 100,
         'previous_hash': '1',
         'transactions': []
-    }
-    chain.append(genesis)
+    })
 
 def hash_block(block):
     return hashlib.sha256(json.dumps(block, sort_keys=True).encode()).hexdigest()
 
-def proof_of_work(previous_proof):
+def proof_of_work(prev_proof):
     proof = 1
     while True:
-        guess = hashlib.sha256(str(proof**2 - previous_proof**2).encode()).hexdigest()
+        guess = hashlib.sha256(str(proof**2 - prev_proof**2).encode()).hexdigest()
         if guess[:DIFFICULTY] == "0" * DIFFICULTY:
             return proof
         proof += 1
@@ -51,12 +46,11 @@ def mine_block(address):
     global total_mined
     if address not in wallets:
         return "❌ Wallet not found."
-
     if total_mined + MINING_REWARD > MAX_SUPPLY:
-        return "❌ Max supply reached. Cannot mine more MACCI."
+        return "❌ Max supply reached."
 
-    previous_proof = chain[-1]['proof']
-    proof = proof_of_work(previous_proof)
+    prev_proof = chain[-1]['proof']
+    proof = proof_of_work(prev_proof)
     block = {
         'index': len(chain) + 1,
         'timestamp': time.time(),
@@ -66,12 +60,12 @@ def mine_block(address):
     }
 
     chain.append(block)
-    wallets[address]['balance'] += MINING_REWARD
+    wallets[address]["balance"] += MINING_REWARD
     total_mined += MINING_REWARD
     transactions.clear()
-
     return f"⛏️ Block mined! +{MINING_REWARD} MACCI to {address}"
 
+# === WALLET FUNCTIONS ===
 def create_wallet():
     addr = uuid.uuid4().hex[:32]
     key = uuid.uuid4().hex
@@ -80,30 +74,29 @@ def create_wallet():
 
 def recover_wallet(key):
     for addr, data in wallets.items():
-        if data['private_key'] == key:
+        if data["private_key"] == key:
             return addr
     return None
 
 def get_balance(address, key):
     if address not in wallets:
         return "❌ Wallet not found."
-    if wallets[address]['private_key'] != key:
+    if wallets[address]["private_key"] != key:
         return "❌ Invalid private key."
     return f"💰 Balance: {wallets[address]['balance']} MACCI"
 
 def send_macci(sender, recipient, amount, key):
     if sender not in wallets:
         return "❌ Sender not found."
-    if wallets[sender]['private_key'] != key:
+    if wallets[sender]["private_key"] != key:
         return "❌ Invalid private key."
-    if wallets[sender]['balance'] < amount:
+    if wallets[sender]["balance"] < amount:
         return "❌ Not enough balance."
-
     if recipient not in wallets:
         wallets[recipient] = {"balance": 0, "private_key": "UNKNOWN"}
 
-    wallets[sender]['balance'] -= amount
-    wallets[recipient]['balance'] += amount
+    wallets[sender]["balance"] -= amount
+    wallets[recipient]["balance"] += amount
     return f"✅ Sent {amount} MACCI from {sender} to {recipient}"
 
 def trade_usdt(wallet, usdt_amount):
@@ -120,16 +113,14 @@ def trade_usdt(wallet, usdt_amount):
         return "❌ Must trade more than 0 USDT."
 
     macci = int(usdt * PRESALE_RATE)
-
     if total_mined + macci > MAX_SUPPLY:
-        return "❌ Max supply reached. Cannot mint more MACCI."
+        return "❌ Max supply reached."
 
-    wallets[wallet]['balance'] += macci
+    wallets[wallet]["balance"] += macci
     total_mined += macci
     return f"💱 Traded {usdt} USDT → {macci} MACCI"
 
-# === Terminal Command Route ===
-
+# === TERMINAL INTERFACE ===
 @app.route('/terminal', methods=['POST'])
 def terminal():
     data = request.get_json()
@@ -169,6 +160,20 @@ def terminal():
         case _:
             return jsonify({"output": "❓ Unknown command. Try: create, recover, mine, balance, send, trade"})
 
+# === STRIPE WEBHOOK COMPATIBLE TRADE ENDPOINT ===
+@app.route('/trade', methods=['POST'])
+def trade_from_webhook():
+    data = request.get_json()
+    wallet = data.get("wallet_address")
+    usdt_amount = data.get("usdt_amount")
+
+    if not wallet or not usdt_amount:
+        return jsonify({"output": "❌ Missing data"}), 400
+
+    result = trade_usdt(wallet, usdt_amount)
+    return jsonify({"output": result}), 200
+
+# === SERVER START ===
 if __name__ == '__main__':
     create_genesis_block()
     print(f"✅ MACCI server running with difficulty {DIFFICULTY}")
