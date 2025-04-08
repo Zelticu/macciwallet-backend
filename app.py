@@ -8,6 +8,8 @@ CORS(app)
 # === CONFIG ===
 MAX_SUPPLY = 100_000_000
 PREMINE_AMOUNT = 40_000_000
+RECOVERY_AMOUNT = 75_000
+EXTRA_BUFFER = 1_000
 PRESALE_RATE = 10000
 MINING_REWARD = 10
 DIFFICULTY = 9
@@ -18,8 +20,11 @@ transactions = []
 total_mined = 0
 
 MAIN_WALLET = "7fc8cb7519f34a0dbef5b2e15ecc24be"
-wallets[MAIN_WALLET] = {"balance": PREMINE_AMOUNT, "private_key": "PREMINED_KEY"}
-total_mined += PREMINE_AMOUNT
+wallets[MAIN_WALLET] = {
+    "balance": PREMINE_AMOUNT + RECOVERY_AMOUNT + EXTRA_BUFFER,
+    "private_key": "PREMINED_KEY"
+}
+total_mined += PREMINE_AMOUNT + RECOVERY_AMOUNT + EXTRA_BUFFER
 
 # === BLOCKCHAIN CORE ===
 def create_genesis_block():
@@ -172,6 +177,18 @@ def trade_from_webhook():
 
     result = trade_usdt(wallet, usdt_amount)
     return jsonify({"output": result}), 200
+
+# === PRICE FEED ENDPOINT ===
+@app.route('/price', methods=['GET'])
+def get_price():
+    price_per_macci = 1 / PRESALE_RATE  # 0.0001
+    market_cap = total_mined * price_per_macci
+
+    return jsonify({
+        "price_usd": round(price_per_macci, 6),
+        "circulating_supply": total_mined,
+        "market_cap_usd": round(market_cap, 2)
+    })
 
 # === SERVER START ===
 if __name__ == '__main__':
